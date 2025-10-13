@@ -51,7 +51,7 @@ public class ModCommands {
                                     String character = StringArgumentType.getString(ctx, "character").toLowerCase();
 
                                     if (!CHARACTER_TYPES.contains(character)) {
-                                        ctx.getSource().sendFailure(Component.literal("Invalid character type! Use neutral, aggressive, or passive."));
+                                        ctx.getSource().sendFailure(Component.literal("Invalid character type. Use neutral, aggressive, or passive."));
                                         return 0;
                                     }
 

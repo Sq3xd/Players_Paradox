@@ -71,7 +71,7 @@ public class FollowFromDistanceGoal extends Goal {
 
                 // Add realistic forward impulse when jumping
                 Vec3 look = mob.getLookAngle();
-                double impulse = 0.28D;
+                double impulse = 0.42D;
                 mob.setDeltaMovement(
                         mob.getDeltaMovement().add(look.x * impulse, 0, look.z * impulse)
                 );
