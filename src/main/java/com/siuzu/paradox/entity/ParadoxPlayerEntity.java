@@ -12,6 +12,7 @@ import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.*;
 import net.minecraft.world.entity.ai.goal.*;
+import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.*;
@@ -31,6 +32,13 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> OWNER_MODEL =
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
+
+    private MeleeAttackGoal aggressiveAttackGoal;
+    private NearestAttackableTargetGoal<Player> aggressiveTargetGoal;
+
+    private AvoidEntityGoal<Player> passiveAvoidGoal;
+
+    private FollowFromDistanceGoal neutralFollowGoal;
 
     private final Random random = new Random();
     private boolean transformed = false;
@@ -52,7 +60,6 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         this.xpReward = 100;
     }
 
-    // === Attributes ===
     public static AttributeSupplier.Builder createAttributes() {
         return Mob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 60.0D)
@@ -62,7 +69,6 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 .add(Attributes.FOLLOW_RANGE, 32.0D);
     }
 
-    // === Goals ===
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
@@ -70,32 +76,50 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     }
 
     private void updateBehavior() {
-        // clear existing
-        this.goalSelector.getAvailableGoals().removeIf(g -> !(g.getGoal() instanceof FloatGoal));
-        this.targetSelector.getAvailableGoals().clear();
+        // Remove all previously registered custom goals
+        if (aggressiveAttackGoal != null) this.goalSelector.removeGoal(aggressiveAttackGoal);
+        if (aggressiveTargetGoal != null) this.targetSelector.removeGoal(aggressiveTargetGoal);
+        if (passiveAvoidGoal != null) this.goalSelector.removeGoal(passiveAvoidGoal);
+        if (neutralFollowGoal != null) this.goalSelector.removeGoal(neutralFollowGoal);
+
+        // Reset aggression and target
+        this.setTarget(null);
+        this.setAggressive(false);
 
         String type = getCharacterType();
 
         switch (type) {
             case "aggressive" -> {
-                this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.2D, true));
-                this.goalSelector.addGoal(2, new AggressiveAttackGoal(this, 1.25D, true));
+                aggressiveAttackGoal = new MeleeAttackGoal(this, 1.25D, true);
+                aggressiveTargetGoal = new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
+                        p -> !p.isSpectator() && !p.isInvulnerable());
 
-                this.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(this, Player.class, true));
+                this.goalSelector.addGoal(1, aggressiveAttackGoal);
+                this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
+                this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
+                this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
+
+                this.targetSelector.addGoal(1, aggressiveTargetGoal);
+                this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
+
+                System.out.println("[Echo AI] Aggressive goals loaded.");
             }
             case "passive" -> {
-                this.goalSelector.addGoal(1, new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D));
+                passiveAvoidGoal = new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D);
+
+                this.goalSelector.addGoal(1, passiveAvoidGoal);
                 this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
                 this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
-                this.setTarget(null);
-                this.setAggressive(false);
+
                 System.out.println("[Echo AI] Passive goals loaded.");
             }
             default -> {
-                this.goalSelector.addGoal(1, new FollowFromDistanceGoal(this, 1.0D, 33.0D, 50.0D));
+                neutralFollowGoal = new FollowFromDistanceGoal(this, 1.0D, 33.0D, 50.0D);
+
+                this.goalSelector.addGoal(1, neutralFollowGoal);
                 this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
-                this.setTarget(null);
-                this.setAggressive(false);
+                this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
+
                 System.out.println("[Echo AI] Neutral goals loaded.");
             }
         }
@@ -269,9 +293,18 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             this.level().playSound(null, this.blockPosition(),
                     SoundEvents.PLAYER_ATTACK_STRONG, this.getSoundSource(), 1.2F, 1.0F);
 
-            setCharacterType("aggressive");
-            reacquireTarget();
-            this.forceAIWake();
+            setCharacterType("aggressive"); // calls updateBehavior()
+
+            // Immediately acquire a target
+            LivingEntity target = this.level().getNearestPlayer(this, 32);
+            if (target instanceof Player p && !p.isCreative() && !p.isSpectator()) {
+                this.setTarget(p);
+                this.setAggressive(true);
+                this.getNavigation().moveTo(p, 1.25D);
+                System.out.println("[Echo] Target reacquired and aggression active on: " + p.getName().getString());
+            } else {
+                System.out.println("[Echo] No valid player found for aggression.");
+            }
 
             transformationTimer = -1;
         }
@@ -302,23 +335,24 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     }
 
     private void reacquireTarget() {
-        Player nearest = this.level().getNearestPlayer(this, 32);
-        if (nearest != null && !nearest.isCreative() && !nearest.isSpectator()) {
-            this.setTarget(nearest);
-            this.setAggressive(true);
-
-            // force immediate melee AI activation
-            this.goalSelector.tick();
-            this.getNavigation().moveTo(nearest, 1.25D);
-
-            // feedback
-            this.level().broadcastEntityEvent(this, (byte)4);
-            this.level().playSound(null, this.blockPosition(),
-                    SoundEvents.PLAYER_ATTACK_SWEEP, this.getSoundSource(), 0.8F, 1.0F);
-            System.out.println("[Echo] Target reacquired and aggression active on: " + nearest.getName().getString());
+        // Prefer the last attacker if available
+        LivingEntity revengeTarget = this.getLastHurtByMob();
+        Player targetPlayer = null;
+        if (revengeTarget instanceof Player p && !p.isSpectator() && !p.isCreative() && p.isAlive()) {
+            targetPlayer = p;
         } else {
-            this.setAggressive(false);
-            this.setTarget(null);
+            // Fallback to nearest player within 32 blocks
+            targetPlayer = this.level().getNearestPlayer(this, 32);
+            if (targetPlayer != null && (targetPlayer.isSpectator() || targetPlayer.isCreative())) {
+                targetPlayer = null; // don't target spectators/creative
+            }
+        }
+        // Set the target and aggression
+        this.setTarget(targetPlayer);
+        this.setAggressive(targetPlayer != null);
+        if (targetPlayer != null) {
+            // Force immediate pathfinding toward target
+            this.getNavigation().moveTo(targetPlayer, 1.25D);
         }
     }
 
