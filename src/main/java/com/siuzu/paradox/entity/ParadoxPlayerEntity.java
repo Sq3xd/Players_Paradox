@@ -20,6 +20,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
@@ -76,7 +78,6 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     }
 
     private void updateBehavior() {
-        // Remove all previously registered custom goals
         if (aggressiveAttackGoal != null) this.goalSelector.removeGoal(aggressiveAttackGoal);
         if (aggressiveTargetGoal != null) this.targetSelector.removeGoal(aggressiveTargetGoal);
         if (passiveAvoidGoal != null) this.goalSelector.removeGoal(passiveAvoidGoal);
@@ -94,31 +95,38 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 aggressiveTargetGoal = new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
                         p -> !p.isSpectator() && !p.isInvulnerable());
 
+
                 this.goalSelector.addGoal(1, aggressiveAttackGoal);
                 this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
                 this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
                 this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
 
+
                 this.targetSelector.addGoal(1, aggressiveTargetGoal);
                 this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
+
 
                 System.out.println("[Echo AI] Aggressive goals loaded.");
             }
             case "passive" -> {
                 passiveAvoidGoal = new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D);
 
+
                 this.goalSelector.addGoal(1, passiveAvoidGoal);
                 this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
                 this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
+
 
                 System.out.println("[Echo AI] Passive goals loaded.");
             }
             default -> {
                 neutralFollowGoal = new FollowFromDistanceGoal(this, 1.0D, 33.0D, 50.0D);
 
+
                 this.goalSelector.addGoal(1, neutralFollowGoal);
                 this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
                 this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
+
 
                 System.out.println("[Echo AI] Neutral goals loaded.");
             }
@@ -133,14 +141,13 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     public void setCharacterType(String type) {
         type = type.toLowerCase();
         String old = this.entityData.get(CHARACTER_TYPE);
-        if (old.equals(type)) return; // no spam reset
+        if (old.equals(type)) return;
 
         this.entityData.set(CHARACTER_TYPE, type);
         updateBehavior();
         System.out.println("[Echo Type] Changed from " + old + " → " + type);
     }
 
-    // === Main Tick ===
     @Override
     public void tick() {
         super.tick();
