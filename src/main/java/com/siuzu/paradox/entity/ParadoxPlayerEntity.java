@@ -78,14 +78,10 @@ public class ParadoxPlayerEntity extends PathfinderMob {
 
         switch (type) {
             case "aggressive" -> {
-                this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.25D, true));
-                this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
-                this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
-                this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
-                this.targetSelector.addGoal(1,
-                        new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
-                                p -> !p.isInvulnerable() && !p.isSpectator()));
-                System.out.println("[Echo AI] Aggressive goals loaded.");
+                this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.2D, true));
+                this.goalSelector.addGoal(2, new AggressiveAttackGoal(this, 1.25D, true));
+
+                this.targetSelector.addGoal(1, new NearestAttackableTargetGoal<>(this, Player.class, true));
             }
             case "passive" -> {
                 this.goalSelector.addGoal(1, new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D));
