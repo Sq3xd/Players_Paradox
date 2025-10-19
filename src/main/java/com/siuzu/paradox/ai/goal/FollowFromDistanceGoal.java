@@ -22,6 +22,7 @@ public class FollowFromDistanceGoal extends Goal {
     private final Random random = new Random();
 
     private float lastYRot = 0f;
+    private int wanderCooldown = 0; // delay between random moves
 
     public FollowFromDistanceGoal(PathfinderMob mob, double speed, double minDistance, double maxDistance) {
         this.mob = mob;
@@ -44,12 +45,10 @@ public class FollowFromDistanceGoal extends Goal {
         if (targetPlayer == null) return;
 
         double dist = mob.distanceTo(targetPlayer);
-
-        // Keep a smooth rotation memory so we don’t jitter while airborne
         boolean isGrounded = mob.onGround();
 
         if (dist < minDistance) {
-            // Flee logic
+            // --- FLEE LOGIC ---
             double dx = mob.getX() - targetPlayer.getX();
             double dz = mob.getZ() - targetPlayer.getZ();
             double length = Math.sqrt(dx * dx + dz * dz);
@@ -58,30 +57,25 @@ public class FollowFromDistanceGoal extends Goal {
             double fleeX = mob.getX() + (dx / length) * 5;
             double fleeZ = mob.getZ() + (dz / length) * 5;
 
-            // Smoothly rotate toward flee direction
             float targetRot = (float) (Mth.atan2(dz, dx) * (180F / Math.PI)) - 90F;
-            mob.setYRot(lerpRotation(mob.getYRot(), targetRot, 6f)); // turn speed
+            mob.setYRot(lerpRotation(mob.getYRot(), targetRot, 6f));
             mob.setYBodyRot(mob.getYRot());
             mob.setYHeadRot(mob.getYRot());
 
-            mob.getNavigation().moveTo(fleeX, mob.getY(), fleeZ, speed * 1.3);
+            mob.getNavigation().moveTo(fleeX, mob.getY(), fleeZ, speed * 1.32);
 
             if (isGrounded && random.nextFloat() < 0.15f) {
                 mob.getJumpControl().jump();
 
-                // Add realistic forward impulse when jumping
                 Vec3 look = mob.getLookAngle();
                 double impulse = 0.42D;
-                mob.setDeltaMovement(
-                        mob.getDeltaMovement().add(look.x * impulse, 0, look.z * impulse)
-                );
+                mob.setDeltaMovement(mob.getDeltaMovement().add(look.x * impulse, 0, look.z * impulse));
             }
 
         } else if (dist > maxDistance) {
-            // Follow logic (but keep movement smooth)
+            // --- FOLLOW LOGIC ---
             mob.getNavigation().moveTo(targetPlayer, speed);
 
-            // Smooth head turn
             float targetRot = (float) (Mth.atan2(
                     targetPlayer.getZ() - mob.getZ(),
                     targetPlayer.getX() - mob.getX()) * (180F / Math.PI)) - 90F;
@@ -90,9 +84,20 @@ public class FollowFromDistanceGoal extends Goal {
             mob.setYHeadRot(mob.getYRot());
 
         } else {
-            // Idle and watch
-            mob.getNavigation().stop();
+            // --- IDLE + NATURAL WANDERING ---
             mob.getLookControl().setLookAt(targetPlayer);
+
+            if (--wanderCooldown <= 0) {
+                wanderCooldown = 80 + random.nextInt(100); // wander every 4–9 seconds
+
+                // Pick a random nearby offset
+                double angle = random.nextDouble() * Math.PI * 2;
+                double radius = 2.5 + random.nextDouble() * 3.0; // move 2.5–5.5 blocks
+                double offsetX = mob.getX() + Math.cos(angle) * radius;
+                double offsetZ = mob.getZ() + Math.sin(angle) * radius;
+
+                mob.getNavigation().moveTo(offsetX, mob.getY(), offsetZ, speed * 0.9);
+            }
         }
 
         lastYRot = mob.getYRot();

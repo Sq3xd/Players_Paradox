@@ -1,34 +1,24 @@
 package com.siuzu.paradox.entity;
 
 import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.minecraft.MinecraftProfileTexture;
 import com.siuzu.paradox.ai.goal.AggressiveAttackGoal;
 import com.siuzu.paradox.ai.goal.FollowFromDistanceGoal;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.SkinManager;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.syncher.EntityDataAccessor;
-import net.minecraft.network.syncher.EntityDataSerializers;
-import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.sounds.SoundEvent;
+import net.minecraft.network.syncher.*;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.PathfinderMob;
-import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
-import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.DifficultyInstance;
+import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.attributes.*;
 import net.minecraft.world.entity.ai.goal.*;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
+import net.minecraft.world.item.*;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ServerLevelAccessor;
 
 import javax.annotation.Nullable;
-import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
@@ -37,326 +27,329 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> OWNER_UUID =
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> CHARACTER_TYPE =
+            SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> OWNER_MODEL =
+            SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
 
-    private int lifetime = 20 * 60; // 1 minute in ticks
-    private int hideCooldown = 0;
     private final Random random = new Random();
     private boolean transformed = false;
-    private int transformationTimer = 0;
+    private int transformationTimer = -1;
+
     private boolean isEating = false;
     private int eatingTimer = 0;
     private boolean isRetreating = false;
     private int retreatTimer = 0;
+    private ItemStack previousMainhand = ItemStack.EMPTY;
 
-    @Nullable
-    private GameProfile cachedProfile;
+    private int lifetime = 20 * 60; // 1 minute
+    @Nullable private GameProfile cachedProfile;
 
-    public ParadoxPlayerEntity(EntityType<? extends PathfinderMob> type, Level world) {
-        super(type, world);
+    public ParadoxPlayerEntity(EntityType<? extends PathfinderMob> type, Level level) {
+        super(type, level);
         this.setPersistenceRequired();
-        updateBehavior();
+        this.setCanPickUpLoot(true);
+        this.xpReward = 100;
     }
 
+    // === Attributes ===
+    public static AttributeSupplier.Builder createAttributes() {
+        return Mob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 60.0D)
+                .add(Attributes.MOVEMENT_SPEED, 0.255D)
+                .add(Attributes.ATTACK_DAMAGE, 2.5D)
+                .add(Attributes.ATTACK_SPEED, 15.0D)
+                .add(Attributes.FOLLOW_RANGE, 32.0D);
+    }
 
+    // === Goals ===
     @Override
     protected void registerGoals() {
+        this.goalSelector.addGoal(0, new FloatGoal(this));
         updateBehavior();
     }
 
     private void updateBehavior() {
-        this.goalSelector.getAvailableGoals().clear();
+        // clear existing
+        this.goalSelector.getAvailableGoals().removeIf(g -> !(g.getGoal() instanceof FloatGoal));
         this.targetSelector.getAvailableGoals().clear();
-
 
         String type = getCharacterType();
 
         switch (type) {
             case "aggressive" -> {
-                this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.2D, true));
-                this.goalSelector.addGoal(2, new AggressiveAttackGoal(this, 1.25D, true));
+                this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.25D, true));
+                this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
+                this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
+                this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
+                this.targetSelector.addGoal(1,
+                        new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
+                                p -> !p.isInvulnerable() && !p.isSpectator()));
+                System.out.println("[Echo AI] Aggressive goals loaded.");
             }
             case "passive" -> {
-                this.goalSelector.addGoal(2, new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D));
-            }
-            default -> { // neutral
-                this.goalSelector.addGoal(2, new FollowFromDistanceGoal(this, 1.0D, 33.0D, 50.0D));
+                this.goalSelector.addGoal(1, new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D));
+                this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
                 this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
+                this.setTarget(null);
+                this.setAggressive(false);
+                System.out.println("[Echo AI] Passive goals loaded.");
+            }
+            default -> {
+                this.goalSelector.addGoal(1, new FollowFromDistanceGoal(this, 1.0D, 33.0D, 50.0D));
+                this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
+                this.setTarget(null);
+                this.setAggressive(false);
+                System.out.println("[Echo AI] Neutral goals loaded.");
             }
         }
     }
 
+    // === Character Type ===
+    public String getCharacterType() {
+        return this.entityData.get(CHARACTER_TYPE);
+    }
+
+    public void setCharacterType(String type) {
+        type = type.toLowerCase();
+        String old = this.entityData.get(CHARACTER_TYPE);
+        if (old.equals(type)) return; // no spam reset
+
+        this.entityData.set(CHARACTER_TYPE, type);
+        updateBehavior();
+        System.out.println("[Echo Type] Changed from " + old + " → " + type);
+    }
+
+    // === Main Tick ===
     @Override
     public void tick() {
         super.tick();
 
-        // === Despawn logic ===
-        lifetime--;
-        if (lifetime <= 0 && !isVisibleToAnyPlayer()) {
-            this.discard();
-            return;
+        if (getCharacterType().equals("aggressive") && this.tickCount % 100 == 0 && this.getTarget() != null) {
+            this.forceAIWake();
         }
 
         if (this.level().isClientSide) return;
+
+        // lifetime
+        if (--lifetime <= 0 && !isVisibleToAnyPlayer()) {
+            this.discard();
+            return;
+        }
 
         Player nearest = this.level().getNearestPlayer(this, 32);
         if (nearest == null) return;
 
         double dist = this.distanceTo(nearest);
 
-        // === RETREAT & EATING LOGIC (for aggressive only) ===
+        // === Retreat & Eat Logic ===
         if (getCharacterType().equals("aggressive")) {
             if (!isEating && !isRetreating && this.getHealth() <= this.getMaxHealth() * 0.3F) {
-                // Start retreating if low HP
-                isRetreating = true;
-                retreatTimer = 0;
-                this.getNavigation().stop();
+                startRetreat(nearest);
             }
-
-            if (isRetreating) {
-                retreatTimer++;
-
-                // Move away from player
-                double dx = this.getX() - nearest.getX();
-                double dz = this.getZ() - nearest.getZ();
-                double len = Math.sqrt(dx * dx + dz * dz);
-                if (len > 0.1) {
-                    double fleeX = this.getX() + (dx / len) * 6;
-                    double fleeZ = this.getZ() + (dz / len) * 6;
-                    this.getNavigation().moveTo(fleeX, this.getY(), fleeZ, 1.45D);
-                }
-
-                // When far enough, stop & eat
-                if (dist > 10.0F || retreatTimer > 60) {
-                    isRetreating = false;
-                    startEating();
-                    return;
-                }
-            }
+            if (isRetreating) handleRetreat(nearest, dist);
         }
 
-        // === EATING LOGIC ===
         if (isEating) {
-            eatingTimer++;
-
-            // Play eating sound + crumbs
-            if (eatingTimer % 4 == 0) {
-                float pitch = 0.9F + random.nextFloat() * 0.2F;
-                this.level().playSound(null, this.blockPosition(),
-                        SoundEvents.GENERIC_EAT, this.getSoundSource(), 0.8F, pitch);
-
-                if (this.level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                    serverLevel.sendParticles(
-                            new net.minecraft.core.particles.ItemParticleOption(
-                                    net.minecraft.core.particles.ParticleTypes.ITEM,
-                                    new ItemStack(Items.COOKED_BEEF)
-                            ),
-                            this.getX(),
-                            this.getEyeY(),
-                            this.getZ(),
-                            6,
-                            random.nextGaussian() * 0.1,
-                            0.1,
-                            random.nextGaussian() * 0.1,
-                            0.05
-                    );
-                }
-            }
-
-            // Done eating (~2.5 seconds)
-            if (eatingTimer >= 50) {
-                this.heal(5.0F);
-                finishEating();
-                setCharacterType("aggressive"); // resume fighting
-                updateBehavior();
-            }
-
-            return; // skip other logic while eating
+            handleEating();
+            return;
         }
 
-        // === TRANSFORMATION SEQUENCE ===
-        // Now protected by persistent flag so it only happens once
-        if (!transformed && this.getHealth() <= this.getMaxHealth() / 2) {
-            transformed = true;
-            transformationTimer = 0;
-            this.getNavigation().stop();
+        // === Transformation Logic ===
+        if (!transformed && this.getHealth() <= this.getMaxHealth() - 15) {
+            startTransformation();
+        }
+        if (transformationTimer >= 0) {
+            handleTransformation();
         }
 
-        if (transformed && transformationTimer >= 0 && transformationTimer < 90) { // capped for safety
-            transformationTimer++;
+        // Debug every 40 ticks
+        if (this.tickCount % 40 == 0) {
+            System.out.println("[Echo Debug] Type=" + getCharacterType() +
+                    " | Goals=" + this.goalSelector.getAvailableGoals().size() +
+                    " | Target=" + (this.getTarget() != null ? this.getTarget().getName().getString() : "none"));
+        }
 
-            Player lookTarget = this.level().getNearestPlayer(this, 32);
-            if (lookTarget != null)
-                this.getLookControl().setLookAt(lookTarget);
-
-            if (transformationTimer < 40) return;
-
-            if (transformationTimer % 10 == 0) {
-                int step = (transformationTimer - 40) / 10;
-
-                switch (step) {
-                    case 0 -> {
-                        this.setItemSlot(EquipmentSlot.MAINHAND, Items.TURTLE_HELMET.getDefaultInstance());
-                        equipArmorPiece(EquipmentSlot.HEAD, Items.TURTLE_HELMET.getDefaultInstance());
-                    }
-                    case 1 -> {
-                        this.setItemSlot(EquipmentSlot.MAINHAND, Items.NETHERITE_CHESTPLATE.getDefaultInstance());
-                        equipArmorPiece(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE.getDefaultInstance());
-                    }
-                    case 2 -> {
-                        this.setItemSlot(EquipmentSlot.MAINHAND, Items.NETHERITE_LEGGINGS.getDefaultInstance());
-                        equipArmorPiece(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS.getDefaultInstance());
-                    }
-                    case 3 -> {
-                        this.setItemSlot(EquipmentSlot.MAINHAND, Items.DIAMOND_BOOTS.getDefaultInstance());
-                        equipArmorPiece(EquipmentSlot.FEET, Items.DIAMOND_BOOTS.getDefaultInstance());
-                    }
-                    case 4 -> {
-                        this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
-                        this.level().playSound(null, this.blockPosition(),
-                                SoundEvents.PLAYER_ATTACK_STRONG, this.getSoundSource(), 1.2F, 1.0F);
-                        setCharacterType("aggressive");
-                        updateBehavior();
-                        transformationTimer = -1; // done
-                    }
-                }
-            }
+        if (getCharacterType().equals("aggressive") && this.getTarget() != null && this.tickCount % 20 == 0) {
+            this.goalSelector.tick();
         }
     }
 
-    @Override
-    public boolean doHurtTarget(net.minecraft.world.entity.Entity target) {
-        boolean result = super.doHurtTarget(target);
-
-        if (result && target instanceof Player player) {
-            // 30% chance to do a critical hit
-            if (random.nextFloat() < 0.3F) {
-                player.hurt(this.damageSources().mobAttack(this), 5.0F); // +3 HP bonus damage
-
-                // Play crit sound & spawn particles
-                this.level().playSound(null, this.blockPosition(),
-                        SoundEvents.PLAYER_ATTACK_CRIT, this.getSoundSource(), 1.2F, 1.0F);
-
-                if (this.level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                    serverLevel.sendParticles(
-                            net.minecraft.core.particles.ParticleTypes.CRIT,
-                            player.getX(),
-                            player.getY(0.5),
-                            player.getZ(),
-                            10,
-                            0.3, 0.3, 0.3, 0.1
-                    );
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private void startEating() {
-        this.isEating = true;
-        this.eatingTimer = 0;
+    // === Retreat ===
+    private void startRetreat(Player nearest) {
+        isRetreating = true;
+        retreatTimer = 0;
+        this.setTarget(null);
+        this.setAggressive(false);
         this.getNavigation().stop();
-        this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.COOKED_BEEF));
+        System.out.println("[Echo] Starting retreat");
+    }
 
-        this.level().playSound(null, this.blockPosition(),
-                SoundEvents.PLAYER_BURP, this.getSoundSource(), 0.6F, 1.2F);
+    private void handleRetreat(Player nearest, double dist) {
+        retreatTimer++;
+        double dx = this.getX() - nearest.getX();
+        double dz = this.getZ() - nearest.getZ();
+        double len = Math.sqrt(dx * dx + dz * dz);
+        if (len > 0.1) {
+            double fleeX = this.getX() + (dx / len) * 6;
+            double fleeZ = this.getZ() + (dz / len) * 6;
+            this.getNavigation().moveTo(fleeX, this.getY(), fleeZ, 1.4D);
+        }
+
+        if (dist > 10.0F || retreatTimer > 60) {
+            isRetreating = false;
+            startEating();
+        }
+    }
+
+    // === Eating ===
+    private void startEating() {
+        isEating = true;
+        eatingTimer = 0;
+        this.setTarget(null);
+        this.setAggressive(false);
+        this.getNavigation().stop();
+
+        previousMainhand = this.getMainHandItem().copy();
+        this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.GOLDEN_APPLE));
+        System.out.println("[Echo] Started eating");
+    }
+
+    private void handleEating() {
+        eatingTimer++;
+        if (eatingTimer % 4 == 0) {
+            this.level().playSound(null, this.blockPosition(), SoundEvents.GENERIC_EAT,
+                    this.getSoundSource(), 0.8F, 0.9F + random.nextFloat() * 0.1F);
+            if (this.level() instanceof ServerLevel server) {
+                server.sendParticles(
+                        new net.minecraft.core.particles.ItemParticleOption(ParticleTypes.ITEM, new ItemStack(Items.GOLDEN_APPLE)),
+                        this.getX(), this.getEyeY(), this.getZ(),
+                        6, random.nextGaussian() * 0.1, 0.1, random.nextGaussian() * 0.1, 0.05);
+            }
+        }
+        if (eatingTimer >= 50) finishEating();
     }
 
     private void finishEating() {
         this.isEating = false;
         this.eatingTimer = 0;
-        this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+        this.heal(20.0F);
+
+        if (!previousMainhand.isEmpty()) {
+            this.setItemSlot(EquipmentSlot.MAINHAND, previousMainhand);
+        } else {
+            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        }
+        previousMainhand = ItemStack.EMPTY;
+
+        setCharacterType("aggressive");
+        reacquireTarget();
     }
 
-    private void equipArmorPiece(EquipmentSlot slot, ItemStack item) {
-        this.level().playSound(null, this.blockPosition(), SoundEvents.ARMOR_EQUIP_NETHERITE, this.getSoundSource(), 1.0F, 1.0F);
-        this.setItemSlot(slot, item);
+    // === Transformation ===
+    private void startTransformation() {
+        transformed = true;
+        transformationTimer = 0;
+        this.getNavigation().stop();
+
+        // Clear gear
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            if (slot.getType() == EquipmentSlot.Type.ARMOR || slot == EquipmentSlot.MAINHAND)
+                this.setItemSlot(slot, ItemStack.EMPTY);
+        }
+
+        this.level().playSound(null, this.blockPosition(),
+                SoundEvents.ENCHANTMENT_TABLE_USE, this.getSoundSource(), 1.0F, 0.8F + random.nextFloat() * 0.4F);
+        System.out.println("[Echo] Starting transformation");
+    }
+
+    private void handleTransformation() {
+        transformationTimer++;
+        if (transformationTimer % 10 == 0 && transformationTimer <= 50)
+            equipNextRandomPiece();
+
+        if (transformationTimer > 50) {
+            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+            this.level().playSound(null, this.blockPosition(),
+                    SoundEvents.PLAYER_ATTACK_STRONG, this.getSoundSource(), 1.2F, 1.0F);
+
+            setCharacterType("aggressive");
+            reacquireTarget();
+            this.forceAIWake();
+
+            transformationTimer = -1;
+        }
+    }
+
+    private void equipNextRandomPiece() {
+        ItemStack[] pool = {
+                new ItemStack(Items.IRON_HELMET), new ItemStack(Items.IRON_CHESTPLATE),
+                new ItemStack(Items.IRON_LEGGINGS), new ItemStack(Items.IRON_BOOTS),
+                new ItemStack(Items.CHAINMAIL_HELMET), new ItemStack(Items.CHAINMAIL_CHESTPLATE),
+                new ItemStack(Items.CHAINMAIL_LEGGINGS), new ItemStack(Items.CHAINMAIL_BOOTS),
+                new ItemStack(Items.GOLDEN_HELMET), new ItemStack(Items.GOLDEN_CHESTPLATE),
+                new ItemStack(Items.GOLDEN_LEGGINGS), new ItemStack(Items.GOLDEN_BOOTS),
+                new ItemStack(Items.DIAMOND_HELMET), new ItemStack(Items.DIAMOND_CHESTPLATE),
+                new ItemStack(Items.DIAMOND_LEGGINGS), new ItemStack(Items.DIAMOND_BOOTS),
+                new ItemStack(Items.NETHERITE_HELMET), new ItemStack(Items.NETHERITE_CHESTPLATE),
+                new ItemStack(Items.NETHERITE_LEGGINGS), new ItemStack(Items.NETHERITE_BOOTS)
+        };
+        ItemStack piece = pool[random.nextInt(pool.length)];
+        if (!(piece.getItem() instanceof ArmorItem armor)) return;
+
+        EquipmentSlot slot = armor.getEquipmentSlot();
+        if (this.getItemBySlot(slot).isEmpty()) {
+            this.setItemSlot(slot, piece);
+            if (this.level() instanceof ServerLevel server)
+                server.sendParticles(ParticleTypes.ENCHANT, this.getX(), this.getEyeY(), this.getZ(), 12, 0.4, 0.4, 0.4, 0.05);
+        }
+    }
+
+    private void reacquireTarget() {
+        Player nearest = this.level().getNearestPlayer(this, 32);
+        if (nearest != null && !nearest.isCreative() && !nearest.isSpectator()) {
+            this.setTarget(nearest);
+            this.setAggressive(true);
+
+            // force immediate melee AI activation
+            this.goalSelector.tick();
+            this.getNavigation().moveTo(nearest, 1.25D);
+
+            // feedback
+            this.level().broadcastEntityEvent(this, (byte)4);
+            this.level().playSound(null, this.blockPosition(),
+                    SoundEvents.PLAYER_ATTACK_SWEEP, this.getSoundSource(), 0.8F, 1.0F);
+            System.out.println("[Echo] Target reacquired and aggression active on: " + nearest.getName().getString());
+        } else {
+            this.setAggressive(false);
+            this.setTarget(null);
+        }
+    }
+
+    private void forceAIWake() {
+        this.goalSelector.tick();           // tick goal selector immediately
+        this.targetSelector.tick();         // ensure target goal is also evaluated
+        if (this.getTarget() != null) {
+            this.getNavigation().moveTo(this.getTarget(), 1.25D);
+            this.setAggressive(true);
+            System.out.println("[Echo] Forced AI wake-up on target: " + this.getTarget().getName().getString());
+        } else {
+            Player nearest = this.level().getNearestPlayer(this, 32);
+            if (nearest != null && !nearest.isCreative() && !nearest.isSpectator()) {
+                this.setTarget(nearest);
+                this.setAggressive(true);
+                this.getNavigation().moveTo(nearest, 1.25D);
+                System.out.println("[Echo] Found new target after wake-up: " + nearest.getName().getString());
+            }
+        }
     }
 
     private boolean isVisibleToAnyPlayer() {
-        for (Player player : this.level().players()) {
-            if (player.hasLineOfSight(this)) {
-                return true;
-            }
+        for (Player p : this.level().players()) {
+            if (p.hasLineOfSight(this)) return true;
         }
         return false;
     }
-
-    private void tryToHide() {
-        Player nearest = this.level().getNearestPlayer(this, 40);
-        if (nearest == null) return;
-
-        if (nearest.hasLineOfSight(this)) {
-            double angle = this.random.nextDouble() * Math.PI * 2;
-            double xOffset = Math.cos(angle) * 4;
-            double zOffset = Math.sin(angle) * 4;
-
-            var nav = this.getNavigation();
-            nav.moveTo(getX() + xOffset, getY(), getZ() + zOffset, 1.1D);
-        }
-    }
-
-
-    public static AttributeSupplier.Builder createAttributes() {
-        return Mob.createMobAttributes()
-                .add(Attributes.MAX_HEALTH, 20.0D)
-                .add(Attributes.MOVEMENT_SPEED, 0.25D)
-                .add(Attributes.ATTACK_DAMAGE, 3.0D)
-                .add(Attributes.FOLLOW_RANGE, 32.0D);
-    }
-
-    private static final EntityDataAccessor<String> OWNER_MODEL =
-            SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
-
-    private static final EntityDataAccessor<String> CHARACTER_TYPE =
-            SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
-
-
-    @Override
-    protected void defineSynchedData() {
-        super.defineSynchedData();
-        this.entityData.define(OWNER_NAME, "");
-        this.entityData.define(OWNER_UUID, "");
-        this.entityData.define(OWNER_MODEL, "default");
-        this.entityData.define(CHARACTER_TYPE, "neutral");
-    }
-
-
-    public void setSummoner(GameProfile profile) {
-        this.entityData.set(OWNER_NAME, profile.getName());
-        this.entityData.set(OWNER_UUID, profile.getId().toString());
-        this.entityData.set(OWNER_MODEL, "default");
-        this.cachedProfile = profile;
-    }
-
-    public String getModelType() {
-        return this.entityData.get(OWNER_MODEL);
-    }
-
-    public void setCharacterType(String type) {
-        this.entityData.set(CHARACTER_TYPE, type.toLowerCase());
-        updateBehavior(); // refresh goals when changed
-    }
-
-    public String getCharacterType() {
-        return this.entityData.get(CHARACTER_TYPE);
-    }
-
-
-    @Nullable
-    public GameProfile getProfile() {
-        if (cachedProfile == null) {
-            String name = this.entityData.get(OWNER_NAME);
-            String uuidStr = this.entityData.get(OWNER_UUID);
-            if (!name.isEmpty() && !uuidStr.isEmpty()) {
-                try {
-                    cachedProfile = new GameProfile(UUID.fromString(uuidStr), name);
-                } catch (IllegalArgumentException ignored) {}
-            }
-        }
-        return cachedProfile;
-    }
-
 
     @Override
     public void addAdditionalSaveData(CompoundTag tag) {
@@ -399,5 +392,41 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 this.cachedProfile = new GameProfile(UUID.fromString(uuidStr), name);
             } catch (IllegalArgumentException ignored) {}
         }
+
+        this.updateBehavior();
+    }
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(OWNER_NAME, "");
+        this.entityData.define(OWNER_UUID, "");
+        this.entityData.define(OWNER_MODEL, "default");
+        this.entityData.define(CHARACTER_TYPE, "neutral");
+    }
+
+    public String getModelType() {
+        return this.entityData.get(OWNER_MODEL);
+    }
+
+    public void setSummoner(GameProfile profile) {
+        this.entityData.set(OWNER_NAME, profile.getName());
+        this.entityData.set(OWNER_UUID, profile.getId().toString());
+        this.entityData.set(OWNER_MODEL, "default");
+        this.cachedProfile = profile;
+    }
+
+    @Nullable
+    public GameProfile getProfile() {
+        if (cachedProfile == null) {
+            String name = this.entityData.get(OWNER_NAME);
+            String uuidStr = this.entityData.get(OWNER_UUID);
+            if (!name.isEmpty() && !uuidStr.isEmpty()) {
+                try {
+                    cachedProfile = new GameProfile(UUID.fromString(uuidStr), name);
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        return cachedProfile;
     }
 }
