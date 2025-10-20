@@ -1,6 +1,7 @@
 package com.siuzu.paradox.ai.goal;
 
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -66,11 +67,11 @@ public class AggressiveAttackGoal extends Goal {
         if (attackCooldown > 0) attackCooldown--;
 
         if (distSq <= 3.5D && attackCooldown <= 0) {
-            mob.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            mob.swing(InteractionHand.MAIN_HAND);
             mob.doHurtTarget(target);
             Vec3 look = mob.getLookAngle();
             mob.setDeltaMovement(mob.getDeltaMovement().add(look.x * 0.2, 0.0, look.z * 0.2));
-            attackCooldown = 20;
+            attackCooldown = 17;
         }
     }
 

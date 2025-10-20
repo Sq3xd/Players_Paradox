@@ -105,12 +105,6 @@ public class ParadoxMod
 
 
     @SubscribeEvent
-    public void cheats(TickEvent.PlayerTickEvent event) {
-        event.player.setItemSlot(EquipmentSlot.HEAD, Items.DIAMOND.getDefaultInstance());
-    }
-
-
-    @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         ModCommands.register(event.getDispatcher());
     }

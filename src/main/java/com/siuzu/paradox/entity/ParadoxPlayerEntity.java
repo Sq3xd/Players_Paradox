@@ -3,6 +3,7 @@ package com.siuzu.paradox.entity;
 import com.mojang.authlib.GameProfile;
 import com.siuzu.paradox.ai.goal.AggressiveAttackGoal;
 import com.siuzu.paradox.ai.goal.FollowFromDistanceGoal;
+import com.siuzu.paradox.ai.goal.PassiveFollowGoal;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.*;
@@ -41,6 +42,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     private AvoidEntityGoal<Player> passiveAvoidGoal;
 
     private FollowFromDistanceGoal neutralFollowGoal;
+    private PassiveFollowGoal passiveFollowGoal;
 
     private final Random random = new Random();
     private boolean transformed = false;
@@ -52,7 +54,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     private int retreatTimer = 0;
     private ItemStack previousMainhand = ItemStack.EMPTY;
 
-    private int lifetime = 20 * 60; // 1 minute
+    private int lifetime = 20 * 120; // 1 minute
     @Nullable private GameProfile cachedProfile;
 
     public ParadoxPlayerEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -82,6 +84,8 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         if (aggressiveTargetGoal != null) this.targetSelector.removeGoal(aggressiveTargetGoal);
         if (passiveAvoidGoal != null) this.goalSelector.removeGoal(passiveAvoidGoal);
         if (neutralFollowGoal != null) this.goalSelector.removeGoal(neutralFollowGoal);
+        if (passiveAvoidGoal != null) this.goalSelector.removeGoal(passiveAvoidGoal);
+        if (passiveFollowGoal != null) this.goalSelector.removeGoal(passiveFollowGoal);
 
         // Reset aggression and target
         this.setTarget(null);
@@ -109,14 +113,10 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 System.out.println("[Echo AI] Aggressive goals loaded.");
             }
             case "passive" -> {
-                passiveAvoidGoal = new AvoidEntityGoal<>(this, Player.class, 15.0F, 1.0D, 1.2D);
-
-
-                this.goalSelector.addGoal(1, passiveAvoidGoal);
-                this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
-                this.goalSelector.addGoal(3, new RandomLookAroundGoal(this));
-
-
+                this.goalSelector.addGoal(1, new PassiveFollowGoal(this, 1.0D, 2.0D));
+                this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
+                this.setTarget(null);
+                this.setAggressive(false);
                 System.out.println("[Echo AI] Passive goals loaded.");
             }
             default -> {
@@ -128,7 +128,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
 
 
-                System.out.println("[Echo AI] Neutral goals loaded.");
+                System.out.println("Neutral goals loaded.");
             }
         }
     }

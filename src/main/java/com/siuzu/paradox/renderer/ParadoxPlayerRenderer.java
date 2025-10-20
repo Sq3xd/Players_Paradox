@@ -30,6 +30,8 @@ public class ParadoxPlayerRenderer extends HumanoidMobRenderer<ParadoxPlayerEnti
 
 
 
+
+
     public ParadoxPlayerRenderer(EntityRendererProvider.Context ctx) {
         super(ctx, new PlayerModel<>(ctx.bakeLayer(ModelLayers.PLAYER), false), 0.5f);
 

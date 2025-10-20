@@ -30,7 +30,6 @@ public class FollowFromDistanceGoal extends Goal {
     private enum BehaviourState {
         FOLLOW,
         RETREAT,
-        CIRCLE,
         OBSERVE
     }
 
@@ -103,10 +102,6 @@ public class FollowFromDistanceGoal extends Goal {
             if (desiredState != currentState) {
                 currentState = desiredState;
                 stateTicks = 0;
-                if (currentState == BehaviourState.CIRCLE) {
-                    circleDirection = random.nextBoolean() ? 1.0D : -1.0D;
-                    circleRadius = Mth.clamp(dist, minDistance * 0.8D, maxDistance * 0.9D);
-                }
             }
             decisionCooldown = 15 + random.nextInt(20);
         }
@@ -116,7 +111,6 @@ public class FollowFromDistanceGoal extends Goal {
         switch (currentState) {
             case RETREAT -> performRetreatBehaviour(dist);
             case FOLLOW -> performFollowBehaviour(dist);
-            case CIRCLE -> performCircleBehaviour(dist);
             case OBSERVE -> performObserveBehaviour(dist);
         }
 
@@ -146,15 +140,11 @@ public class FollowFromDistanceGoal extends Goal {
             return BehaviourState.FOLLOW;
         }
 
-        if (currentState == BehaviourState.CIRCLE && stateTicks < 60) {
-            return BehaviourState.CIRCLE;
-        }
-
         if (currentState == BehaviourState.OBSERVE && stateTicks < 40) {
             return BehaviourState.OBSERVE;
         }
 
-        return random.nextFloat() < 0.45F ? BehaviourState.CIRCLE : BehaviourState.OBSERVE;
+        return BehaviourState.OBSERVE;
     }
 
     private void performFollowBehaviour(double distance) {
@@ -199,36 +189,6 @@ public class FollowFromDistanceGoal extends Goal {
         }
 
         if (distance > minDistance * 1.4D) {
-            currentState = BehaviourState.OBSERVE;
-            stateTicks = 0;
-        }
-    }
-
-    private void performCircleBehaviour(double distance) {
-        Vec3 center = targetPlayer.position();
-        double angularSpeed = 0.25D;
-        double angle = (stateTicks * angularSpeed) * circleDirection;
-
-        double desiredRadius = Mth.clamp(distance, minDistance * 1.1D, circleRadius);
-        double offsetX = Math.cos(angle) * desiredRadius;
-        double offsetZ = Math.sin(angle) * desiredRadius;
-
-        Vec3 destination = findNavigablePosition(center.add(offsetX, 0, offsetZ));
-        mob.getNavigation().moveTo(destination.x(), destination.y(), destination.z(), speed * 0.9D);
-
-        lookAtPlayer(5.5F);
-
-        if (distance > maxDistance * 1.1D) {
-            currentState = BehaviourState.FOLLOW;
-            stateTicks = 0;
-        }
-
-        if (distance < minDistance * 0.9D) {
-            currentState = BehaviourState.RETREAT;
-            stateTicks = 0;
-        }
-
-        if (stateTicks > 120) {
             currentState = BehaviourState.OBSERVE;
             stateTicks = 0;
         }
