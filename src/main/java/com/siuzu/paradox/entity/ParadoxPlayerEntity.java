@@ -9,6 +9,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.*;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.util.Mth;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.*;
@@ -21,20 +22,21 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 
 public class ParadoxPlayerEntity extends PathfinderMob {
     private static final EntityDataAccessor<String> OWNER_NAME =
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
-    private static final EntityDataAccessor<String> OWNER_UUID =
-            SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
+    public static final EntityDataAccessor<Optional<UUID>> OWNER_UUID =
+            SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.OPTIONAL_UUID);
     private static final EntityDataAccessor<String> CHARACTER_TYPE =
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> OWNER_MODEL =
             SynchedEntityData.defineId(ParadoxPlayerEntity.class, EntityDataSerializers.STRING);
+
+    private GameProfile gameProfile;
+    private boolean isSlim;
+    private net.minecraft.resources.ResourceLocation skinLocation;
 
     private MeleeAttackGoal aggressiveAttackGoal;
     private NearestAttackableTargetGoal<Player> aggressiveTargetGoal;
@@ -273,13 +275,11 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         reacquireTarget();
     }
 
-    // === Transformation ===
     private void startTransformation() {
         transformed = true;
         transformationTimer = 0;
         this.getNavigation().stop();
 
-        // Clear gear
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             if (slot.getType() == EquipmentSlot.Type.ARMOR || slot == EquipmentSlot.MAINHAND)
                 this.setItemSlot(slot, ItemStack.EMPTY);
@@ -300,9 +300,8 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             this.level().playSound(null, this.blockPosition(),
                     SoundEvents.PLAYER_ATTACK_STRONG, this.getSoundSource(), 1.2F, 1.0F);
 
-            setCharacterType("aggressive"); // calls updateBehavior()
+            setCharacterType("aggressive");
 
-            // Immediately acquire a target
             LivingEntity target = this.level().getNearestPlayer(this, 32);
             if (target instanceof Player p && !p.isCreative() && !p.isSpectator()) {
                 this.setTarget(p);
@@ -342,41 +341,36 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     }
 
     private void reacquireTarget() {
-        // Prefer the last attacker if available
         LivingEntity revengeTarget = this.getLastHurtByMob();
         Player targetPlayer = null;
         if (revengeTarget instanceof Player p && !p.isSpectator() && !p.isCreative() && p.isAlive()) {
             targetPlayer = p;
         } else {
-            // Fallback to nearest player within 32 blocks
             targetPlayer = this.level().getNearestPlayer(this, 32);
             if (targetPlayer != null && (targetPlayer.isSpectator() || targetPlayer.isCreative())) {
-                targetPlayer = null; // don't target spectators/creative
+                targetPlayer = null;
             }
         }
         // Set the target and aggression
         this.setTarget(targetPlayer);
         this.setAggressive(targetPlayer != null);
         if (targetPlayer != null) {
-            // Force immediate pathfinding toward target
             this.getNavigation().moveTo(targetPlayer, 1.25D);
         }
     }
 
     private void forceAIWake() {
-        this.goalSelector.tick();           // tick goal selector immediately
-        this.targetSelector.tick();         // ensure target goal is also evaluated
+        this.goalSelector.tick();
+        this.targetSelector.tick();
         if (this.getTarget() != null) {
             this.getNavigation().moveTo(this.getTarget(), 1.25D);
             this.setAggressive(true);
-            System.out.println("[Echo] Forced AI wake-up on target: " + this.getTarget().getName().getString());
         } else {
             Player nearest = this.level().getNearestPlayer(this, 32);
             if (nearest != null && !nearest.isCreative() && !nearest.isSpectator()) {
                 this.setTarget(nearest);
                 this.setAggressive(true);
                 this.getNavigation().moveTo(nearest, 1.25D);
-                System.out.println("[Echo] Found new target after wake-up: " + nearest.getName().getString());
             }
         }
     }
@@ -393,7 +387,8 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         super.addAdditionalSaveData(tag);
         tag.putString("CharacterType", this.entityData.get(CHARACTER_TYPE));
         tag.putString("OwnerName", this.entityData.get(OWNER_NAME));
-        tag.putString("OwnerUUID", this.entityData.get(OWNER_UUID));
+        Optional<UUID> uuidOpt = this.entityData.get(OWNER_UUID);
+        uuidOpt.ifPresent(uuid -> tag.putString("OwnerUUID", uuid.toString()));
         tag.putString("OwnerModel", this.entityData.get(OWNER_MODEL));
         tag.putBoolean("Transformed", this.transformed);
         tag.putInt("TransformationTimer", this.transformationTimer);
@@ -407,10 +402,18 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             this.entityData.set(CHARACTER_TYPE, tag.getString("CharacterType"));
 
         if (tag.contains("OwnerName"))
-            this.entityData.set(OWNER_NAME, tag.getString("OwnerName"));
+           this.entityData.set(OWNER_NAME, tag.getString("OwnerName"));
 
-        if (tag.contains("OwnerUUID"))
-            this.entityData.set(OWNER_UUID, tag.getString("OwnerUUID"));
+        if (tag.contains("OwnerUUID")) {
+            try {
+                UUID uuid = UUID.fromString(tag.getString("OwnerUUID"));
+                this.entityData.set(OWNER_UUID, Optional.of(uuid));
+            } catch (IllegalArgumentException e) {
+                this.entityData.set(OWNER_UUID, Optional.empty());
+            }
+        } else {
+            this.entityData.set(OWNER_UUID, Optional.empty());
+        }
 
         if (tag.contains("OwnerModel"))
             this.entityData.set(OWNER_MODEL, tag.getString("OwnerModel"));
@@ -421,9 +424,9 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         if (tag.contains("TransformationTimer"))
             this.transformationTimer = tag.getInt("TransformationTimer");
 
-        // rebuild cached profile so skin reloads correctly
         String name = this.entityData.get(OWNER_NAME);
-        String uuidStr = this.entityData.get(OWNER_UUID);
+        Optional<UUID> uuidOpt = this.entityData.get(OWNER_UUID);
+        String uuidStr = uuidOpt.map(UUID::toString).orElse("");
         if (!name.isEmpty() && !uuidStr.isEmpty()) {
             try {
                 this.cachedProfile = new GameProfile(UUID.fromString(uuidStr), name);
@@ -434,10 +437,15 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     }
 
     @Override
+    public float getAttackAnim(float partialTick) {
+        return Mth.lerp(partialTick, this.oAttackAnim, this.attackAnim);
+    }
+
+    @Override
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(OWNER_NAME, "");
-        this.entityData.define(OWNER_UUID, "");
+        this.entityData.define(OWNER_UUID, Optional.empty());
         this.entityData.define(OWNER_MODEL, "default");
         this.entityData.define(CHARACTER_TYPE, "neutral");
     }
@@ -448,22 +456,38 @@ public class ParadoxPlayerEntity extends PathfinderMob {
 
     public void setSummoner(GameProfile profile) {
         this.entityData.set(OWNER_NAME, profile.getName());
-        this.entityData.set(OWNER_UUID, profile.getId().toString());
+        this.entityData.set(OWNER_UUID, Optional.ofNullable(profile.getId()));
         this.entityData.set(OWNER_MODEL, "default");
         this.cachedProfile = profile;
     }
 
-    @Nullable
+    public void setProfile(GameProfile profile) {
+        this.gameProfile = profile;
+        this.entityData.set(OWNER_UUID, Optional.ofNullable(profile.getId()));
+        this.entityData.set(OWNER_NAME, profile.getName());
+    }
+
     public GameProfile getProfile() {
-        if (cachedProfile == null) {
+        if (this.gameProfile == null) {
+            Optional<UUID> uuidOpt = this.entityData.get(OWNER_UUID);
             String name = this.entityData.get(OWNER_NAME);
-            String uuidStr = this.entityData.get(OWNER_UUID);
-            if (!name.isEmpty() && !uuidStr.isEmpty()) {
-                try {
-                    cachedProfile = new GameProfile(UUID.fromString(uuidStr), name);
-                } catch (IllegalArgumentException ignored) {}
+            if (uuidOpt.isPresent() && name != null) {
+                this.gameProfile = new GameProfile(uuidOpt.get(), name);
             }
         }
-        return cachedProfile;
+        return this.gameProfile;
+    }
+
+    public void setSkin(net.minecraft.resources.ResourceLocation loc, boolean slim) {
+        this.skinLocation = loc;
+        this.isSlim = slim;
+    }
+
+    public net.minecraft.resources.ResourceLocation getSkinLocation() {
+        return this.skinLocation;
+    }
+
+    public boolean isSlimModel() {
+        return this.isSlim;
     }
 }

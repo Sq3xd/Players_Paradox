@@ -51,7 +51,6 @@ public class ParadoxMod
     private static final Logger LOGGER = LogUtils.getLogger();
 
 
-
     public ParadoxMod(FMLJavaModLoadingContext context)
     {
         IEventBus eventBus = context.getModEventBus();
