@@ -13,6 +13,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
+import net.minecraft.client.renderer.entity.layers.CapeLayer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
 import net.minecraft.client.resources.DefaultPlayerSkin;
@@ -24,12 +25,16 @@ import java.util.Map;
 import java.util.UUID;
 
 
-public class ParadoxPlayerRenderer extends HumanoidMobRenderer<ParadoxPlayerEntity, PlayerModel<ParadoxPlayerEntity>> {
+public class ParadoxPlayerRenderer extends LivingEntityRenderer<ParadoxPlayerEntity, PlayerModel<ParadoxPlayerEntity>> {
+    private final PlayerModel<ParadoxPlayerEntity> modelDefault;
+    private final PlayerModel<ParadoxPlayerEntity> modelSlim;
 
     public ParadoxPlayerRenderer(EntityRendererProvider.Context context) {
-        super(context, new PlayerModel<>(context.bakeLayer(net.minecraft.client.model.geom.ModelLayers.PLAYER), false), 0.5F);
+        super(context, new PlayerModel<>(context.bakeLayer(ModelLayers.PLAYER), /* slim= */ false), 0.5f);
+        this.modelDefault = this.model;
+        this.modelSlim = new PlayerModel<>(context.bakeLayer(ModelLayers.PLAYER_SLIM), /* slim= */ true);
 
-        // Armor layers
+        // Add armor layer (inner and outer) using default armor models:contentReference[oaicite:7]{index=7}
         this.addLayer(new HumanoidArmorLayer<>(
                 this,
                 new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
@@ -37,49 +42,66 @@ public class ParadoxPlayerRenderer extends HumanoidMobRenderer<ParadoxPlayerEnti
                 context.getModelManager()
         ));
 
-        // Item in hand layer
         this.addLayer(new ItemInHandLayer<>(this, context.getItemInHandRenderer()));
     }
 
     @Override
     public ResourceLocation getTextureLocation(ParadoxPlayerEntity entity) {
-        return entity.getSkinLocation() != null
-                ? entity.getSkinLocation()
-                : DefaultPlayerSkin.getDefaultSkin(entity.getUUID());
+        ResourceLocation skinLoc = entity.getSkinLocation();
+        if (skinLoc != null) {
+            return skinLoc;
+        } else {
+            // Fallback to default skin by UUID
+            GameProfile profile = entity.getProfile();
+            if (profile != null && profile.getId() != null) {
+                return DefaultPlayerSkin.getDefaultSkin(profile.getId());
+            }
+            // If even that fails, use some generic Steve texture
+            return DefaultPlayerSkin.getDefaultSkin(profile.getId());
+        }
     }
 
     @Override
-    protected void setupRotations(ParadoxPlayerEntity entity, PoseStack poseStack, float ageInTicks, float rotationYaw, float partialTick) {
-        super.setupRotations(entity, poseStack, ageInTicks, rotationYaw, partialTick);
-    }
-
-    @Override
-    public void render(ParadoxPlayerEntity entity, float entityYaw, float partialTicks, PoseStack matrixStack,
+    public void render(ParadoxPlayerEntity entity, float yaw, float partialTicks, com.mojang.blaze3d.vertex.PoseStack matrixStack,
                        MultiBufferSource buffer, int packedLight) {
 
-        PlayerModel<ParadoxPlayerEntity> model = this.getModel();
+        if (entity.getSkinLocation() == null) {
+            GameProfile profile = entity.getProfile();
+            if (profile != null) {
+                Minecraft.getInstance().getSkinManager().registerSkins(profile, (type, location, profileTexture) -> {
+                    if (type == MinecraftProfileTexture.Type.SKIN) {
+                        boolean slim = (profileTexture != null && "slim".equals(profileTexture.getMetadata("model")));
+                        entity.setSkin(location, slim);
+                    }
+                }, true);
+            }
+        }
 
-        // Setup pose
-        model.attackTime = entity.getAttackAnim(partialTicks);
-        model.riding = entity.isPassenger();
-        model.young = entity.isBaby();
-        model.crouching = entity.isCrouching();
+        // Switch model based on slim flag before rendering
+        boolean slim = entity.isSlimModel();
+        this.model = slim ? this.modelSlim : this.modelDefault;
 
         model.rightArmPose = getArmPose(entity);
-        model.leftArmPose = HumanoidModel.ArmPose.EMPTY;
+        model.leftArmPose  = HumanoidModel.ArmPose.EMPTY;
 
-        super.render(entity, entityYaw, partialTicks, matrixStack, buffer, packedLight);
+        super.render(entity, yaw, partialTicks, matrixStack, buffer, packedLight);
     }
 
     private HumanoidModel.ArmPose getArmPose(ParadoxPlayerEntity entity) {
-        if (entity.swinging) {
+        if (entity.getMainHandItem().getItem().getDefaultInstance().isDamageableItem()) {
             return HumanoidModel.ArmPose.THROW_SPEAR;
-        } else if (entity.isUsingItem()) {
-            return HumanoidModel.ArmPose.ITEM;
-        } else if (!entity.getMainHandItem().isEmpty()) {
-            return HumanoidModel.ArmPose.ITEM;
         } else {
             return HumanoidModel.ArmPose.EMPTY;
         }
+    }
+
+    @Override
+    protected boolean isBodyVisible(ParadoxPlayerEntity entity) {
+        return true;
+    }
+
+    @Override
+    protected boolean isShaking(ParadoxPlayerEntity entity) {
+        return true;
     }
 }

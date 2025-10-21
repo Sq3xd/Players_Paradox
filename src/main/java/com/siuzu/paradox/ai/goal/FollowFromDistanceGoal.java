@@ -13,19 +13,6 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Random;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.PathfinderMob;
-import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.Vec3;
-
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Random;
-
 public class FollowFromDistanceGoal extends Goal {
     private enum BehaviourState {
         FOLLOW,

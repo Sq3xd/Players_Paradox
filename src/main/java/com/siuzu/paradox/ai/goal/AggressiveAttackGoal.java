@@ -42,16 +42,9 @@ public class AggressiveAttackGoal extends Goal {
     }
 
     @Override
-    public void start() {
-        System.out.println("[Echo AttackGoal] Started attacking: " +
-                (mob.getTarget() != null ? mob.getTarget().getName().getString() : "null"));
-    }
-
-    @Override
     public void tick() {
         LivingEntity target = mob.getTarget();
         if (target == null || !target.isAlive()) {
-            System.out.println("[Echo AttackGoal] Lost target!");
             return;
         }
 
@@ -78,6 +71,5 @@ public class AggressiveAttackGoal extends Goal {
     @Override
     public void stop() {
         mob.getNavigation().stop();
-        System.out.println("[Echo AttackGoal] Stopped");
     }
 }

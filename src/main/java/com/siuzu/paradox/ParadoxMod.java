@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import com.siuzu.paradox.entity.ParadoxPlayerEntity;
 import com.siuzu.paradox.init.ModCommands;
 import com.siuzu.paradox.init.ModEntities;
+import com.siuzu.paradox.init.ModEvents;
 import com.siuzu.paradox.renderer.ParadoxPlayerRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
@@ -55,34 +56,15 @@ public class ParadoxMod
     {
         IEventBus eventBus = context.getModEventBus();
 
-        eventBus.addListener(this::commonSetup);
-
 
         MinecraftForge.EVENT_BUS.register(this);
+
+        MinecraftForge.EVENT_BUS.register(new ModEvents());
 
         ModEntities.ENTITY_TYPES.register(eventBus);
 
 
-        context.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-    }
-
-    private void commonSetup(final FMLCommonSetupEvent event)
-    {
-        LOGGER.info("HELLO FROM COMMON SETUP");
-
-        if (Config.logDirtBlock)
-            LOGGER.info("DIRT BLOCK >> {}", ForgeRegistries.BLOCKS.getKey(Blocks.DIRT));
-
-        LOGGER.info(Config.magicNumberIntroduction + Config.magicNumber);
-
-        Config.items.forEach((item) -> LOGGER.info("ITEM >> {}", item.toString()));
-    }
-
-
-    @SubscribeEvent
-    public void onServerStarting(ServerStartingEvent event)
-    {
-        LOGGER.info("HELLO from server starting");
+        context.registerConfig(ModConfig.Type.COMMON, Config.COMMON_CONFIG);
     }
 
     @Mod.EventBusSubscriber(modid = ParadoxMod.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
@@ -101,7 +83,6 @@ public class ParadoxMod
             event.put(ModEntities.PARADOX_PLAYER.get(), ParadoxPlayerEntity.createAttributes().build());
         }
     }
-
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {

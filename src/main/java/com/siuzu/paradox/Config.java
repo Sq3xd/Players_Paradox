@@ -13,49 +13,45 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Mod.EventBusSubscriber(modid = ParadoxMod.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
-public class Config
-{
-    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
+public class Config {
 
-    private static final ForgeConfigSpec.BooleanValue LOG_DIRT_BLOCK = BUILDER
-            .comment("Whether to log the dirt block on common setup")
-            .define("logDirtBlock", true);
+    public static final ForgeConfigSpec COMMON_CONFIG;
+    public static final Common COMMON;
 
-    private static final ForgeConfigSpec.IntValue MAGIC_NUMBER = BUILDER
-            .comment("A magic number")
-            .defineInRange("magicNumber", 42, 0, Integer.MAX_VALUE);
+    static {
+        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
 
-    public static final ForgeConfigSpec.ConfigValue<String> MAGIC_NUMBER_INTRODUCTION = BUILDER
-            .comment("What you want the introduction message to be for the magic number")
-            .define("magicNumberIntroduction", "The magic number is... ");
+        COMMON = new Common(builder);
 
-    // a list of strings that are treated as resource locations for items
-    private static final ForgeConfigSpec.ConfigValue<List<? extends String>> ITEM_STRINGS = BUILDER
-            .comment("A list of items to log on common setup.")
-            .defineListAllowEmpty("items", List.of("minecraft:iron_ingot"), Config::validateItemName);
-
-    static final ForgeConfigSpec SPEC = BUILDER.build();
-
-    public static boolean logDirtBlock;
-    public static int magicNumber;
-    public static String magicNumberIntroduction;
-    public static Set<Item> items;
-
-    private static boolean validateItemName(final Object obj)
-    {
-        return obj instanceof final String itemName && ForgeRegistries.ITEMS.containsKey(new ResourceLocation(itemName));
+        COMMON_CONFIG = builder.build();
     }
 
-    @SubscribeEvent
-    static void onLoad(final ModConfigEvent event)
-    {
-        logDirtBlock = LOG_DIRT_BLOCK.get();
-        magicNumber = MAGIC_NUMBER.get();
-        magicNumberIntroduction = MAGIC_NUMBER_INTRODUCTION.get();
+    public static class Common {
+        public final ForgeConfigSpec.IntValue defaultBehavior;
+        public final ForgeConfigSpec.IntValue tradeBehavior;
+        public final ForgeConfigSpec.IntValue mobKillBehavior;
+        public final ForgeConfigSpec.IntValue villagerKillBehavior;
 
-        // convert the list of strings into a set of items
-        items = ITEM_STRINGS.get().stream()
-                .map(itemName -> ForgeRegistries.ITEMS.getValue(new ResourceLocation(itemName)))
-                .collect(Collectors.toSet());
+        public Common(ForgeConfigSpec.Builder builder) {
+            builder.push("behavior_values");
+
+            defaultBehavior = builder
+                    .comment("Default behavior value when player first joins.")
+                    .defineInRange("defaultBehavior", 0, -999999999, 999999999);
+
+            tradeBehavior = builder
+                    .comment("Behavior change when trading with a villager.")
+                    .defineInRange("tradeBehavior", 10, -999999999, 999999999);
+
+            mobKillBehavior = builder
+                    .comment("Behavior change when killing a mob.")
+                    .defineInRange("mobKillBehavior", 1, -999999999, 999999999);
+
+            villagerKillBehavior = builder
+                    .comment("Behavior change when killing a villager.")
+                    .defineInRange("villagerKillBehavior", 15, -999999999, 999999999);
+
+            builder.pop();
+        }
     }
 }
