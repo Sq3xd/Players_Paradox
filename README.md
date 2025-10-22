@@ -5,3 +5,5 @@ Each personality makes "Echo" act differently, it's personality is determined ba
 follow and stalk, and aggressive will attack immediately.
 
 If you want to play this mod please visit it's Curseforge page - https://www.curseforge.com/minecraft/mc-mods/players-paradox
+
+![Preview](https://media.forgecdn.net/attachments/1365/888/2-png.png)
