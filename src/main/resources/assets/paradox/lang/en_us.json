@@ -289,5 +289,13 @@
   "phrase.paradox.confused_7": "I still have more to tell!",
   "phrase.paradox.confused_8": "Don’t go yet!",
   "phrase.paradox.confused_9": "Are you afraid of me?",
-  "phrase.paradox.confused_10": "I didn’t mean to scare you..."
+  "phrase.paradox.confused_10": "I didn’t mean to scare you...",
+
+  "item.paradox.one_handed_sword": "One Handed Sword",
+  "item.paradox.the_amulet_of_the_time": "The Amulet Of The Time",
+  "item.paradox.the_shard_of_the_time": "The Shard Of The Time",
+
+  "itemGroup.paradox_tab": "Player's Paradox",
+
+  "gui.jei.description.one_handed_sword": "Can be acquired by encountering player echo with good personality, he may give you this sword as a reward."
 }

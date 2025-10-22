@@ -2,6 +2,8 @@ package com.siuzu.paradox.ai.goal;
 
 import com.siuzu.paradox.ParadoxPhrases;
 import com.siuzu.paradox.entity.ParadoxPlayerEntity;
+import com.siuzu.paradox.init.ModItems;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
@@ -33,12 +35,16 @@ public class PassiveFollowGoal extends Goal {
     private boolean completed = false;
 
     private static final List<ItemStack> GIFTS = List.of(
-            new ItemStack(Items.GOLDEN_APPLE),
-            new ItemStack(Items.DIAMOND),
-            new ItemStack(Items.EMERALD, 3),
-            new ItemStack(Items.ENDER_PEARL, 2),
-            new ItemStack(Items.EXPERIENCE_BOTTLE, 5),
-            new ItemStack(Items.BOOK)
+            new ItemStack(Items.ENCHANTED_GOLDEN_APPLE),
+            new ItemStack(Items.NETHERITE_INGOT),
+            new ItemStack(Items.EMERALD, 12),
+            new ItemStack(Items.ENDER_PEARL, 8),
+            new ItemStack(Items.EXPERIENCE_BOTTLE, 16),
+            new ItemStack(Items.DIAMOND, 4),
+            new ItemStack(Items.DIAMOND, 8),
+            new ItemStack(Items.NETHER_STAR, 1),
+            new ItemStack(ModItems.ONE_HANDED_SWORD.get()),
+            new ItemStack(ModItems.THE_SHARD_OF_THE_TIME.get())
     );
 
     public PassiveFollowGoal(ParadoxPlayerEntity mob, double speed) {
@@ -122,11 +128,36 @@ public class PassiveFollowGoal extends Goal {
                 if (timer > 120) {
                     say(level, ParadoxPhrases.randomGoodbyePhrase());
                     moveFarAway(level);
-                    completed = true;
                     phase = 4;
+                    completed = true;
+                    vanishWithEffect(level);
                 }
             }
         }
+    }
+
+    private void vanishWithEffect(ServerLevel level) {
+        for (int i = 0; i < 80; i++) {
+            double offsetX = (random.nextDouble() - 0.5) * 1.5;
+            double offsetY = random.nextDouble() * 2.0;
+            double offsetZ = (random.nextDouble() - 0.5) * 1.5;
+            level.sendParticles(
+                    ParticleTypes.END_ROD,
+                    mob.getX() + offsetX,
+                    mob.getY() + 1.0 + offsetY,
+                    mob.getZ() + offsetZ,
+                    1,
+                    0, 0, 0, 0.0
+            );
+        }
+
+        level.playSound(null, mob.blockPosition(),
+                SoundEvents.ENDERMAN_TELEPORT,
+                mob.getSoundSource(),
+                1.5F,
+                0.6F + random.nextFloat() * 0.4F);
+
+        mob.discard();
     }
 
     @Override

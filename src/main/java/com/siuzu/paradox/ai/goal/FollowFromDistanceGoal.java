@@ -171,7 +171,7 @@ public class FollowFromDistanceGoal extends Goal {
 
         mob.getNavigation().moveTo(fleeX, mob.getY(), fleeZ, speed * 1.28D);
 
-        if (mob.onGround() && random.nextFloat() < 0.25F) {
+        if (mob.onGround() && random.nextFloat() < 0.25F && !currentState.equals(BehaviourState.OBSERVE)) {
             mob.getJumpControl().jump();
         }
 
@@ -220,7 +220,6 @@ public class FollowFromDistanceGoal extends Goal {
             return desired;
         }
 
-        // Try a couple of nearby offsets to find a spot to stand on.
         for (int i = 0; i < 4; i++) {
             double angle = (Math.PI / 2) * i;
             double offsetX = Math.cos(angle) * 1.3D;

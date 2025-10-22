@@ -48,8 +48,6 @@ public class ModEvents {
                 player.level().addParticle(ParticleTypes.WITCH, player.getX(), player.getY()+0.15f, player.getZ(), 1f, 1f, 1f);
             }
         }
-
-        System.out.println(player.getPersistentData().getInt("behavior"));
     }
 
     @SubscribeEvent
@@ -159,8 +157,6 @@ public class ModEvents {
             echo.setCharacterType(character);
 
             level.addFreshEntity(echo);
-
-            System.out.println("CREATED");
         }
     }
 

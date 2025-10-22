@@ -81,7 +81,7 @@ public class Config {
 
             echoSpawnChance = builder
                     .comment("Spawn chance of echo after event is triggered.")
-                    .defineInRange("echoSpawnChance", 50, 0, 100);
+                    .defineInRange("echoSpawnChance", 10, 0, 100);
 
             builder.pop();
         }

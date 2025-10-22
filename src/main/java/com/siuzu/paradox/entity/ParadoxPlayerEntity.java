@@ -5,6 +5,7 @@ import com.siuzu.paradox.ParadoxPhrases;
 import com.siuzu.paradox.ai.goal.AggressiveAttackGoal;
 import com.siuzu.paradox.ai.goal.FollowFromDistanceGoal;
 import com.siuzu.paradox.ai.goal.PassiveFollowGoal;
+import com.siuzu.paradox.init.ModItems;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -116,7 +117,9 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
             }
             case "passive" -> {
-                this.goalSelector.addGoal(1, new PassiveFollowGoal(this, 1.25d));
+                passiveFollowGoal = new PassiveFollowGoal(this, 1.25D);
+
+                this.goalSelector.addGoal(1, passiveFollowGoal);
                 this.goalSelector.addGoal(2, new LookAtPlayerGoal(this, Player.class, 32.0F));
                 this.goalSelector.addGoal(3, new RandomStrollGoal(this, 1D));
                 this.setTarget(null);
@@ -300,10 +303,11 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         if (!previousMainhand.isEmpty()) {
             this.setItemSlot(EquipmentSlot.MAINHAND, previousMainhand);
         } else {
-            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.ONE_HANDED_SWORD.get()));
         }
         previousMainhand = ItemStack.EMPTY;
 
+        setCharacterType("aggressive");
         setCharacterType("aggressive");
         reacquireTarget();
     }
@@ -344,7 +348,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             equipNextRandomPiece();
 
         if (transformationTimer > 50) {
-            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD));
+            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.ONE_HANDED_SWORD.get()));
             this.level().playSound(null, this.blockPosition(),
                     SoundEvents.PLAYER_ATTACK_STRONG, this.getSoundSource(), 1.2F, 1.0F);
 

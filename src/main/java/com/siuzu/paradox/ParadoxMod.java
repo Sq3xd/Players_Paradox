@@ -2,10 +2,7 @@ package com.siuzu.paradox;
 
 import com.mojang.logging.LogUtils;
 import com.siuzu.paradox.entity.ParadoxPlayerEntity;
-import com.siuzu.paradox.init.ModCommands;
-import com.siuzu.paradox.init.ModEntities;
-import com.siuzu.paradox.init.ModEvents;
-import com.siuzu.paradox.init.ModItems;
+import com.siuzu.paradox.init.*;
 import com.siuzu.paradox.renderer.ParadoxPlayerRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
@@ -58,7 +55,7 @@ public class ParadoxMod
         IEventBus eventBus = context.getModEventBus();
 
         ModItems.register(eventBus);
-
+        ModTabs.TABS.register(eventBus);
 
         MinecraftForge.EVENT_BUS.register(this);
 
