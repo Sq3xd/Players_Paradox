@@ -1,16 +1,19 @@
 package com.siuzu.paradox.entity;
 
 import com.mojang.authlib.GameProfile;
+import com.siuzu.paradox.ParadoxPhrases;
 import com.siuzu.paradox.ai.goal.AggressiveAttackGoal;
 import com.siuzu.paradox.ai.goal.FollowFromDistanceGoal;
 import com.siuzu.paradox.ai.goal.PassiveFollowGoal;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.*;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.DifficultyInstance;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.*;
 import net.minecraft.world.entity.ai.goal.*;
@@ -47,7 +50,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     private PassiveFollowGoal passiveFollowGoal;
 
     private final Random random = new Random();
-    private boolean transformed = false;
+    public boolean transformed = false;
     private int transformationTimer = -1;
 
     private boolean isEating = false;
@@ -55,8 +58,9 @@ public class ParadoxPlayerEntity extends PathfinderMob {
     private boolean isRetreating = false;
     private int retreatTimer = 0;
     private ItemStack previousMainhand = ItemStack.EMPTY;
+    private long lastPhraseTime = 0;
 
-    private int lifetime = 20 * 120; // 1 minute
+    private int lifetime = 20 * 120; // 2 minutes
     @Nullable private GameProfile cachedProfile;
 
     public ParadoxPlayerEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -97,7 +101,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
 
         switch (type) {
             case "aggressive" -> {
-                aggressiveAttackGoal = new MeleeAttackGoal(this, 1.25D, true);
+                aggressiveAttackGoal = new MeleeAttackGoal(this, 1.35D, true);
                 aggressiveTargetGoal = new NearestAttackableTargetGoal<>(this, Player.class, 10, true, false,
                         p -> !p.isSpectator() && !p.isInvulnerable());
 
@@ -110,27 +114,20 @@ public class ParadoxPlayerEntity extends PathfinderMob {
 
                 this.targetSelector.addGoal(1, aggressiveTargetGoal);
                 this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
-
-
-                System.out.println("[Echo AI] Aggressive goals loaded.");
             }
             case "passive" -> {
-                this.goalSelector.addGoal(1, new PassiveFollowGoal(this, 1.0D, 2.0D));
-                this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
+                this.goalSelector.addGoal(1, new PassiveFollowGoal(this, 1.25d));
+                this.goalSelector.addGoal(2, new LookAtPlayerGoal(this, Player.class, 32.0F));
+                this.goalSelector.addGoal(3, new RandomStrollGoal(this, 1D));
                 this.setTarget(null);
                 this.setAggressive(false);
-                System.out.println("[Echo AI] Passive goals loaded.");
             }
             default -> {
-                neutralFollowGoal = new FollowFromDistanceGoal(this, 1.0D, 33.0D, 50.0D);
-
+                neutralFollowGoal = new FollowFromDistanceGoal(this, 1.25D, 33.0D, 50.0D);
 
                 this.goalSelector.addGoal(1, neutralFollowGoal);
                 this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
                 this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
-
-
-                System.out.println("Neutral goals loaded.");
             }
         }
     }
@@ -147,7 +144,6 @@ public class ParadoxPlayerEntity extends PathfinderMob {
 
         this.entityData.set(CHARACTER_TYPE, type);
         updateBehavior();
-        System.out.println("[Echo Type] Changed from " + old + " → " + type);
     }
 
     @Override
@@ -171,7 +167,6 @@ public class ParadoxPlayerEntity extends PathfinderMob {
 
         double dist = this.distanceTo(nearest);
 
-        // === Retreat & Eat Logic ===
         if (getCharacterType().equals("aggressive")) {
             if (!isEating && !isRetreating && this.getHealth() <= this.getMaxHealth() * 0.3F) {
                 startRetreat(nearest);
@@ -184,19 +179,11 @@ public class ParadoxPlayerEntity extends PathfinderMob {
             return;
         }
 
-        // === Transformation Logic ===
         if (!transformed && this.getHealth() <= this.getMaxHealth() - 15) {
-            startTransformation();
+            startTransformation(this);
         }
         if (transformationTimer >= 0) {
             handleTransformation();
-        }
-
-        // Debug every 40 ticks
-        if (this.tickCount % 40 == 0) {
-            System.out.println("[Echo Debug] Type=" + getCharacterType() +
-                    " | Goals=" + this.goalSelector.getAvailableGoals().size() +
-                    " | Target=" + (this.getTarget() != null ? this.getTarget().getName().getString() : "none"));
         }
 
         if (getCharacterType().equals("aggressive") && this.getTarget() != null && this.tickCount % 20 == 0) {
@@ -204,14 +191,12 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         }
     }
 
-    // === Retreat ===
     private void startRetreat(Player nearest) {
         isRetreating = true;
         retreatTimer = 0;
         this.setTarget(null);
         this.setAggressive(false);
         this.getNavigation().stop();
-        System.out.println("[Echo] Starting retreat");
     }
 
     private void handleRetreat(Player nearest, double dist) {
@@ -231,7 +216,55 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         }
     }
 
-    // === Eating ===
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        boolean result = super.hurt(source, amount);
+        int x = random.nextInt(3);
+
+        if (!this.level().isClientSide && source.getEntity() instanceof Player attacker) {
+            if (x == 1 && !this.getCharacterType().equals("aggressive")){
+                Component phrase = ParadoxPhrases.randomHurtPhrase();
+                Component message = Component.literal("<" + this.getName().getString() + "> ").append(phrase);
+
+                this.level().playSound(null, this.blockPosition(),
+                        SoundEvents.VILLAGER_HURT, this.getSoundSource(), 1.0F, 0.8F + random.nextFloat() * 0.4F);
+
+                double radius = 32.0D;
+                this.level().players().forEach(p -> {
+                    if (p.distanceTo(this) <= radius) {
+                        p.displayClientMessage(message, false);
+                    }
+                });
+            }
+        }
+
+        return result;
+    }
+
+    @Override
+    public boolean killedEntity(ServerLevel level, LivingEntity victim) {
+        super.killedEntity(level, victim);
+
+        if (victim instanceof Player && !level.isClientSide) {
+            var phrase = ParadoxPhrases.randomRevengePhrase();
+
+            var message = net.minecraft.network.chat.Component.literal("<" + this.getName().getString() + "> ")
+                    .append(phrase);
+
+            double radius = 32.0D;
+            level.players().forEach(p -> {
+                if (p.distanceTo(this) <= radius) {
+                    p.displayClientMessage(message, false);
+                }
+            });
+
+            level.playSound(null, this.blockPosition(),
+                    net.minecraft.sounds.SoundEvents.VILLAGER_CELEBRATE,
+                    this.getSoundSource(), 1.0F, 1.0F);
+        }
+        return true;
+    }
+
     private void startEating() {
         isEating = true;
         eatingTimer = 0;
@@ -275,22 +308,37 @@ public class ParadoxPlayerEntity extends PathfinderMob {
         reacquireTarget();
     }
 
-    private void startTransformation() {
+    public void startTransformation(ParadoxPlayerEntity entity) {
         transformed = true;
         transformationTimer = 0;
-        this.getNavigation().stop();
+        entity.getNavigation().stop();
 
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             if (slot.getType() == EquipmentSlot.Type.ARMOR || slot == EquipmentSlot.MAINHAND)
                 this.setItemSlot(slot, ItemStack.EMPTY);
         }
 
-        this.level().playSound(null, this.blockPosition(),
-                SoundEvents.ENCHANTMENT_TABLE_USE, this.getSoundSource(), 1.0F, 0.8F + random.nextFloat() * 0.4F);
-        System.out.println("[Echo] Starting transformation");
+        entity.level().playSound(null, entity.blockPosition(),
+                SoundEvents.ENCHANTMENT_TABLE_USE, entity.getSoundSource(), 1.0F, 0.8F + random.nextFloat() * 0.4F);
+
+        if (entity.level() instanceof ServerLevel serverLevel) {
+            for (int i = 0; i < 40; i++) {
+                double offsetX = (random.nextDouble() - 0.5D) * 1.5D;
+                double offsetY = random.nextDouble() * 1.5D;
+                double offsetZ = (random.nextDouble() - 0.5D) * 1.5D;
+                serverLevel.sendParticles(
+                        ParticleTypes.ANGRY_VILLAGER,
+                        this.getX() + offsetX,
+                        this.getY() + 1.0D + offsetY,
+                        this.getZ() + offsetZ,
+                        1, // count per iteration
+                        0, 0, 0, 0.0
+                );
+            }
+        }
     }
 
-    private void handleTransformation() {
+    public void handleTransformation() {
         transformationTimer++;
         if (transformationTimer % 10 == 0 && transformationTimer <= 50)
             equipNextRandomPiece();
@@ -307,9 +355,6 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 this.setTarget(p);
                 this.setAggressive(true);
                 this.getNavigation().moveTo(p, 1.25D);
-                System.out.println("[Echo] Target reacquired and aggression active on: " + p.getName().getString());
-            } else {
-                System.out.println("[Echo] No valid player found for aggression.");
             }
 
             transformationTimer = -1;
@@ -351,7 +396,7 @@ public class ParadoxPlayerEntity extends PathfinderMob {
                 targetPlayer = null;
             }
         }
-        // Set the target and aggression
+
         this.setTarget(targetPlayer);
         this.setAggressive(targetPlayer != null);
         if (targetPlayer != null) {

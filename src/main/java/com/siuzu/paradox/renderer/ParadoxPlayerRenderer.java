@@ -34,7 +34,6 @@ public class ParadoxPlayerRenderer extends LivingEntityRenderer<ParadoxPlayerEnt
         this.modelDefault = this.model;
         this.modelSlim = new PlayerModel<>(context.bakeLayer(ModelLayers.PLAYER_SLIM), /* slim= */ true);
 
-        // Add armor layer (inner and outer) using default armor models:contentReference[oaicite:7]{index=7}
         this.addLayer(new HumanoidArmorLayer<>(
                 this,
                 new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
@@ -51,12 +50,10 @@ public class ParadoxPlayerRenderer extends LivingEntityRenderer<ParadoxPlayerEnt
         if (skinLoc != null) {
             return skinLoc;
         } else {
-            // Fallback to default skin by UUID
             GameProfile profile = entity.getProfile();
             if (profile != null && profile.getId() != null) {
                 return DefaultPlayerSkin.getDefaultSkin(profile.getId());
             }
-            // If even that fails, use some generic Steve texture
             return DefaultPlayerSkin.getDefaultSkin(profile.getId());
         }
     }
@@ -77,12 +74,14 @@ public class ParadoxPlayerRenderer extends LivingEntityRenderer<ParadoxPlayerEnt
             }
         }
 
-        // Switch model based on slim flag before rendering
         boolean slim = entity.isSlimModel();
         this.model = slim ? this.modelSlim : this.modelDefault;
 
         model.rightArmPose = getArmPose(entity);
         model.leftArmPose  = HumanoidModel.ArmPose.EMPTY;
+
+        float scale = 0.94F;
+        matrixStack.scale(scale, scale, scale);
 
         super.render(entity, yaw, partialTicks, matrixStack, buffer, packedLight);
     }
@@ -102,6 +101,6 @@ public class ParadoxPlayerRenderer extends LivingEntityRenderer<ParadoxPlayerEnt
 
     @Override
     protected boolean isShaking(ParadoxPlayerEntity entity) {
-        return true;
+        return false;
     }
 }
